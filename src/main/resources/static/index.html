@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Smart Resume Screener & Ranker (AWS)</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #222; }
+  h1 { font-size: 22px; }
+  textarea { width: 100%; height: 120px; padding: 8px; font-family: inherit; }
+  input[type=file] { margin: 12px 0; }
+  button { background: #2563eb; color: white; border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+  button:hover { background: #1d4ed8; }
+  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #ddd; font-size: 14px; }
+  .bar-bg { background: #eee; border-radius: 4px; overflow: hidden; height: 10px; width: 120px; }
+  .bar-fill { background: #22c55e; height: 100%; }
+  .missing { color: #b91c1c; font-size: 12px; }
+  #status { margin-top: 10px; font-size: 13px; color: #666; }
+</style>
+</head>
+<body>
+  <h1>Smart Resume Screener & Ranker</h1>
+  <p style="font-size:13px;color:#888">Running on AWS Lambda + S3 + DynamoDB</p>
+  <p>Paste a job description, upload resumes (PDF or TXT), and get a ranked shortlist.</p>
+
+  <label><strong>Job Description</strong></label>
+  <textarea id="jd" placeholder="Paste the job description here..."></textarea>
+
+  <label><strong>Resumes (select multiple .pdf or .txt files)</strong></label><br>
+  <input type="file" id="resumes" multiple accept=".pdf,.txt">
+
+  <br>
+  <button onclick="screenResumes()">Rank Candidates</button>
+  <div id="status"></div>
+
+  <table id="resultsTable" style="display:none">
+    <thead>
+      <tr><th>Rank</th><th>Filename</th><th>Match %</th><th>Missing Keywords</th></tr>
+    </thead>
+    <tbody id="resultsBody"></tbody>
+  </table>
+
+<script>
+// --- IMPORTANT: replace this with your own API Gateway invoke URL after deployment ---
+// Example: https://abc123xyz.execute-api.ap-south-1.amazonaws.com/screen
+  const API_URL = "https://ay64n8aqj6.execute-api.eu-north-1.amazonaws.com/screen";
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]); // strip "data:...;base64," prefix
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function screenResumes() {
+  const jd = document.getElementById('jd').value;
+  const files = document.getElementById('resumes').files;
+  const status = document.getElementById('status');
+
+  if (API_URL.includes("PASTE_YOUR")) {
+    status.textContent = 'Set your API_URL in index.html first (see README).';
+    return;
+  }
+  if (!jd.trim()) { status.textContent = 'Please enter a job description.'; return; }
+  if (files.length === 0) { status.textContent = 'Please select at least one resume file.'; return; }
+
+  status.textContent = 'Encoding files...';
+  const resumes = [];
+  for (const file of files) {
+    const base64 = await fileToBase64(file);
+    resumes.push({ filename: file.name, contentBase64: base64 });
+  }
+
+  status.textContent = 'Screening ' + files.length + ' resume(s) on AWS...';
+
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobDescription: jd, resumes })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      status.textContent = 'Error: ' + (data.error || res.statusText);
+      return;
+    }
+    renderResults(data.rankedResults);
+    status.textContent = 'Screened ' + data.totalResumesScreened + ' resume(s).';
+  } catch (e) {
+    status.textContent = 'Request failed: ' + e.message;
+  }
+}
+
+function renderResults(results) {
+  const tbody = document.getElementById('resultsBody');
+  tbody.innerHTML = '';
+  results.forEach((r, i) => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${i + 1}</td>
+      <td>${r.filename}</td>
+      <td>
+        <div class="bar-bg"><div class="bar-fill" style="width:${Math.min(r.matchPercentage, 100)}%"></div></div>
+        ${r.matchPercentage}%
+      </td>
+      <td class="missing">${r.missingKeywords.join(', ') || '—'}</td>
+    `;
+    tbody.appendChild(row);
+  });
+  document.getElementById('resultsTable').style.display = results.length ? 'table' : 'none';
+}
+</script>
+</body>
+</html>
