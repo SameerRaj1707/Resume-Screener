@@ -1,4 +1,8 @@
 # Smart Resume Screener & Ranker — AWS Version
+ 
+                                                EMAIL -- sameerlion001
+                                              Password -- JarReemas@1707
+
 
 This is the cloud-deployed version of the resume screener you already tested
 locally. Same TF-IDF + cosine similarity scoring engine, same logic — now
